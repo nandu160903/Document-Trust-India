@@ -157,6 +157,10 @@ ENV/
 env.bak/
 venv.bak/
 
+# DocumentTrust — uploaded documents (keep directory via .gitkeep)
+backend/temp/uploads/*
+!backend/temp/uploads/.gitkeep
+
 # Spyder project settings
 .spyderproject
 .spyproject

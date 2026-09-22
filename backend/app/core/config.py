@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     debug: bool = True
 
+    # Server bind address (default: 7676)
+    api_host: str = "0.0.0.0"
+    api_port: int = 7676
+
     # CORS origins for local React frontends (CRA / Vite)
     cors_origins: list[str] = [
         "http://localhost:3000",

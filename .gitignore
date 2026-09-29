@@ -172,6 +172,12 @@ backend/models/**/*.pdmodel
 backend/models/**/*.pdiparams
 !backend/models/README.md
 !backend/models/**/.gitkeep
+backend/datasets/**/images/**/*
+!backend/datasets/**/images/**/.gitkeep
+backend/datasets/**/labels/**/*
+!backend/datasets/**/labels/**/.gitkeep
+backend/runs/
+backend/yolo*.pt
 
 # Spyder project settings
 .spyderproject

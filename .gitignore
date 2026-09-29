@@ -160,6 +160,8 @@ venv.bak/
 # DocumentTrust — uploaded documents (keep directory via .gitkeep)
 backend/temp/uploads/*
 !backend/temp/uploads/.gitkeep
+backend/temp/heatmaps/*
+!backend/temp/heatmaps/.gitkeep
 
 # Spyder project settings
 .spyderproject

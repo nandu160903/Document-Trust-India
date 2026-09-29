@@ -25,7 +25,8 @@ cd backend
 source .venv/bin/activate   # if you use the project venv
 
 # YOLO26n-seg (train then export FP32 ONNX)
-python3 scripts/models/train_yolo_document_seg.py --data path/to/document.yaml
+# Replace datasets/document/document.yaml with your real dataset YAML.
+python3 scripts/models/train_yolo_document_seg.py --data datasets/document/document.yaml --device auto
 python3 scripts/models/export_yolo_onnx.py \
   --weights runs/segment/document_yolo26n_seg/weights/best.pt \
   --output models/yolo26n_seg_document.onnx

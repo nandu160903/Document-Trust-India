@@ -21,3 +21,14 @@ pytesseract>=0.3.10
 torch>=2.4.0
 torchvision>=0.19.0
 transformers>=4.44.0
+
+# === Document CV model stack (FP32 ONNX, local inference) ===
+onnxruntime>=1.19.0
+ultralytics>=8.3.0
+
+# PaddleOCR + orientation/doc processing
+paddleocr>=2.9.0
+paddlepaddle>=2.6.0
+
+# Optional GPU acceleration for ONNX Runtime (install manually if needed):
+# onnxruntime-gpu>=1.19.0

@@ -73,6 +73,45 @@ class Settings(BaseSettings):
     risk_level_low_max: int = 29
     risk_level_medium_max: int = 65
 
+    # === Document CV model paths (FP32 ONNX / local assets) ===
+    models_dir: Path = BASE_DIR / "models"
+    yolo_seg_onnx_path: Path = BASE_DIR / "models" / "yolo26n_seg_document.onnx"
+    yolo_confidence_threshold: float = 0.50
+    yolo_iou_threshold: float = 0.45
+    yolo_input_size: int = 640
+    yolo_model_version: str = "yolo26n-seg-document-v1"
+
+    mobilenet_classifier_onnx_path: Path = (
+        BASE_DIR / "models" / "mobilenetv3_indian_docs.onnx"
+    )
+    mobilenet_classifier_labels: list[str] = [
+        "aadhaar",
+        "pan",
+        "passport",
+        "driving_license",
+        "voter_id",
+        "unknown",
+    ]
+    mobilenet_classifier_threshold: float = 0.50
+    mobilenet_model_version: str = "mobilenetv3-large-indian-docs-v1"
+
+    pp_lcnet_orientation_dir: Path = BASE_DIR / "models" / "pp_lcnet_doc_ori"
+    pp_lcnet_model_version: str = "PP-LCNet_x1_0_doc_ori"
+
+    uvdoc_enabled: bool = False
+    uvdoc_model_dir: Path = BASE_DIR / "models" / "uvdoc"
+    uvdoc_model_version: str = "uvdoc-optional-v1"
+
+    onnx_inference_backend: str = "onnxruntime"  # onnxruntime | opencv_dnn
+    onnx_execution_providers: list[str] = []  # empty = auto CUDA/CPU
+
+    paddleocr_lang: str = "en"
+    paddleocr_use_angle_cls: bool = True
+    paddleocr_version: str = "paddleocr-v2"
+
+    rectified_output_dir: Path = BASE_DIR / "temp" / "rectified"
+    detection_mask_dir: Path = BASE_DIR / "temp" / "masks"
+
 
 @lru_cache
 def get_settings() -> Settings:
@@ -81,4 +120,7 @@ def get_settings() -> Settings:
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
     settings.heatmap_dir.mkdir(parents=True, exist_ok=True)
     settings.temp_dir.mkdir(parents=True, exist_ok=True)
+    settings.rectified_output_dir.mkdir(parents=True, exist_ok=True)
+    settings.detection_mask_dir.mkdir(parents=True, exist_ok=True)
+    settings.models_dir.mkdir(parents=True, exist_ok=True)
     return settings

@@ -162,6 +162,16 @@ backend/temp/uploads/*
 !backend/temp/uploads/.gitkeep
 backend/temp/heatmaps/*
 !backend/temp/heatmaps/.gitkeep
+backend/temp/rectified/*
+!backend/temp/rectified/.gitkeep
+backend/temp/masks/*
+!backend/temp/masks/.gitkeep
+backend/models/*.onnx
+backend/models/**/*.onnx
+backend/models/**/*.pdmodel
+backend/models/**/*.pdiparams
+!backend/models/README.md
+!backend/models/**/.gitkeep
 
 # Spyder project settings
 .spyderproject

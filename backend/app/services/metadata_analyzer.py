@@ -76,8 +76,10 @@ class MetadataAnalyzer:
         )
         flags.extend(self._check_timestamp_inconsistencies(exif_data))
 
-        if not exif_data and is_image(path):
-            flags.append("No EXIF metadata present (possible metadata stripping).")
+        if path.suffix.lower() in {".jpg", ".jpeg"}:
+            with Image.open(path) as image:
+                if image.info.get("progressive"):
+                    flags.append("Progressive JPEG encoding detected.")
 
         if xmp_data:
             flags.extend(self._scan_xmp_history(xmp_data))
@@ -85,14 +87,23 @@ class MetadataAnalyzer:
         return flags, software_candidates
 
     def _analyze_pdf(self, path: Path) -> tuple[list[str], list[str]]:
-        import fitz  # PyMuPDF
+        import pymupdf
 
         flags: list[str] = []
         software_candidates: list[str] = []
 
-        with fitz.open(path) as document:
+        with pymupdf.open(path) as document:
             metadata = document.metadata or {}
             xmp_xml = document.get_xml_metadata() or ""
+            if document.page_count > 0:
+                page = document.load_page(0)
+                text_blocks = page.get_text("blocks")
+                if len(text_blocks) > 0 and not metadata.get("producer"):
+                    flags.append(
+                        "PDF contains selectable text without producer metadata."
+                    )
+            if document.needs_pass:
+                flags.append("PDF is encrypted or has restricted permissions.")
 
         normalized = {str(k).lower(): str(v) for k, v in metadata.items() if v}
         software_candidates.extend(

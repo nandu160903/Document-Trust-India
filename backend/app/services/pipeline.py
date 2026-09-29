@@ -30,6 +30,8 @@ class DocumentAnalyzerPipeline:
         heatmap_url = self._build_heatmap_url(Path(assessment["heatmap_path"]))
 
         return AnalysisResult(
+            authenticity_percentage=assessment["authenticity_percentage"],
+            risk_percentage=assessment["risk_percentage"],
             risk_score=assessment["risk_score"],
             risk_level=assessment["risk_level"],
             reasons=assessment["reasons"],
@@ -37,6 +39,7 @@ class DocumentAnalyzerPipeline:
             heatmap_image_url=heatmap_url,
             extracted_fields=assessment["extracted_fields"],
             anomaly_score=assessment["anomaly_score"],
+            authenticity_score=assessment["authenticity_score"],
             inference_method=assessment["inference_method"],
             component_scores=assessment["component_scores"],
         )

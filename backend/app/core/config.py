@@ -49,21 +49,27 @@ class Settings(BaseSettings):
     ]
 
     # Forensic analysis defaults
-    ela_jpeg_quality: int = 92
-    ela_amplification_factor: float = 10.0
-    ela_mean_error_threshold: float = 8.0
-    ela_peak_anomaly_threshold: float = 2.5
+    ela_jpeg_qualities: list[int] = [90, 95]
+    ela_amplification_factor: float = 12.0
+    ela_mean_error_threshold: float = 4.0
+    ela_peak_anomaly_threshold: float = 2.0
+    ela_anomaly_coverage_threshold: float = 0.035
+    ela_localized_hotspot_threshold: int = 3
+    ela_pixel_threshold: float = 18.0
 
     # Deep learning inference
     enable_transformers_inference: bool = True
-    hf_model_id: str = "google/vit-base-patch16-224"
+    feature_extractor_model: str = "efficientnet_b0_imagenet1k"
 
     # Risk engine weights and thresholds
     risk_weight_metadata: int = 25
     risk_weight_ela: int = 30
     risk_weight_layout: int = 20
     risk_weight_deep_learning: int = 25
-    dl_anomaly_threshold: float = 0.7
+    risk_weight_authenticity: int = 20
+    dl_anomaly_threshold: float = 0.62
+    dl_anomaly_partial_threshold: float = 0.48
+    authenticity_threshold: float = 0.58
     risk_level_low_max: int = 29
     risk_level_medium_max: int = 65
 

@@ -27,6 +27,45 @@ const RISK_STYLES: Record<string, string> = {
   HIGH: 'bg-red-100 text-red-800 border-red-300 dark:bg-red-950 dark:text-red-200',
 }
 
+function ScoreMeter({
+  label,
+  value,
+  helper,
+  barClassName,
+}: {
+  label: string
+  value: number
+  helper: string
+  barClassName: string
+}) {
+  return (
+    <div className="rounded-xl border bg-muted/10 p-4 text-left">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            {label}
+          </p>
+          <p className="text-3xl font-bold tabular-nums">{value}%</p>
+        </div>
+      </div>
+      <div
+        className="mb-2 h-2.5 w-full overflow-hidden rounded-full bg-muted"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={value}
+        aria-label={label}
+      >
+        <div
+          className={cn('h-full rounded-full transition-all', barClassName)}
+          style={{ width: `${value}%` }}
+        />
+      </div>
+      <p className="text-xs text-muted-foreground">{helper}</p>
+    </div>
+  )
+}
+
 export function ResultsDashboard({
   result,
   localPreviewUrl,
@@ -34,6 +73,12 @@ export function ResultsDashboard({
   mimeType,
 }: ResultsDashboardProps) {
   const riskLevel = result.risk_level.toUpperCase()
+  const authenticityPercentage =
+    result.authenticity_percentage ??
+    Math.round(result.authenticity_score * 100)
+  const riskPercentage =
+    result.risk_percentage ?? result.risk_score ?? 0
+
   const originalSrc =
     localPreviewUrl ?? apiUrl(result.original_image_url)
   const heatmapSrc = apiUrl(result.heatmap_image_url)
@@ -54,32 +99,36 @@ export function ResultsDashboard({
               Screening Results
             </CardTitle>
             <CardDescription>
-              Forensic analysis completed by DocumentTrust India engine
+              Authenticity and risk are reported separately for clarity
             </CardDescription>
           </div>
-          <div className="flex items-center gap-3">
-            <Badge
-              className={cn(
-                'px-3 py-1 text-sm font-semibold',
-                RISK_STYLES[riskLevel] ?? RISK_STYLES.MEDIUM,
-              )}
-            >
-              {riskLevel} RISK
-            </Badge>
-            <div className="rounded-lg border px-4 py-2 text-left">
-              <p className="text-xs text-muted-foreground">Risk Score</p>
-              <p className="text-2xl font-bold tabular-nums">
-                {result.risk_score}
-                <span className="text-sm font-normal text-muted-foreground">
-                  /100
-                </span>
-              </p>
-            </div>
-          </div>
+          <Badge
+            className={cn(
+              'self-start px-3 py-1 text-sm font-semibold sm:self-auto',
+              RISK_STYLES[riskLevel] ?? RISK_STYLES.MEDIUM,
+            )}
+          >
+            {riskLevel} RISK VERDICT
+          </Badge>
         </div>
       </CardHeader>
 
       <CardContent className="space-y-6">
+        <div className="grid gap-4 md:grid-cols-2">
+          <ScoreMeter
+            label="Authenticity"
+            value={authenticityPercentage}
+            helper="Higher means the document appears more genuine and consistent."
+            barClassName="bg-emerald-500"
+          />
+          <ScoreMeter
+            label="Risk"
+            value={riskPercentage}
+            helper="Higher means stronger tampering or fraud indicators were detected."
+            barClassName="bg-red-500"
+          />
+        </div>
+
         <Alert>
           {riskLevel === 'HIGH' ? (
             <ShieldAlert />
@@ -90,8 +139,8 @@ export function ResultsDashboard({
           )}
           <AlertTitle>Analysis summary</AlertTitle>
           <AlertDescription>
-            Anomaly confidence: {(result.anomaly_score * 100).toFixed(1)}% ·
-            Inference: {result.inference_method}
+            Authenticity {authenticityPercentage}% · Risk {riskPercentage}% ·
+            Inference engine: {result.inference_method}
           </AlertDescription>
         </Alert>
 

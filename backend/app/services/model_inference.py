@@ -1,138 +1,157 @@
-"""Deep learning and heuristic model inference for document tampering."""
+"""Deep learning and forensic ensemble inference for document tampering."""
 
 from __future__ import annotations
 
 import logging
 import math
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
 import cv2
 import numpy as np
+import torch
+import torch.nn as nn
+from PIL import Image
+from torchvision.models import EfficientNet_B0_Weights, efficientnet_b0
+from torchvision.transforms import functional as tf
 
 from app.core.config import Settings, get_settings
 from app.schemas.forensics import ModelInferenceResult
-from app.services.forensics_utils import load_document_rgb, pil_to_numpy
+from app.services.forensics_utils import DocumentImageContext, load_document_context
 
 logger = logging.getLogger(__name__)
 
-InferenceMethod = Literal["transformers_vit", "heuristic_cv"]
+InferenceMethod = Literal["efficientnet_patch_ensemble", "heuristic_cv"]
 
 
 @dataclass
-class _ViTRuntime:
-    model: object
-    processor: object
+class _EfficientNetRuntime:
+    model: nn.Module
     device: str
 
 
 class ModelInferenceService:
     """
-    Modular forgery inference wrapper.
-
-    Attempts Hugging Face ViT feature extraction first; falls back to
-    computer-vision heuristics when model weights are unavailable offline.
+    Ensemble tamper inference using EfficientNet patch outlier scoring
+    plus classical CV forensic features.
     """
+
+    PATCH_GRID = 4
 
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
-        self._vit_runtime: _ViTRuntime | None = None
-        self._vit_load_failed = False
+        self._runtime: _EfficientNetRuntime | None = None
+        self._runtime_failed = False
 
-    def predict(self, file_path: str | Path) -> ModelInferenceResult:
-        path = Path(file_path)
-        image = load_document_rgb(path)
-        image_bgr = pil_to_numpy(image)
+    def predict(
+        self,
+        file_path: str | Path | None = None,
+        *,
+        context: DocumentImageContext | None = None,
+    ) -> ModelInferenceResult:
+        ctx = context or load_document_context(file_path)  # type: ignore[arg-type]
 
-        if self.settings.enable_transformers_inference and not self._vit_load_failed:
+        if self.settings.enable_transformers_inference and not self._runtime_failed:
             try:
-                score, details = self._predict_with_vit(image)
+                score, details = self._predict_with_efficientnet(ctx)
                 return {
                     "anomaly_score": round(score, 4),
-                    "method": "transformers_vit",
-                    "model_id": self.settings.hf_model_id,
+                    "method": "efficientnet_patch_ensemble",
+                    "model_id": self.settings.feature_extractor_model,
                     "details": details,
                 }
             except Exception as exc:
-                self._vit_load_failed = True
-                logger.warning("ViT inference unavailable, using heuristic fallback: %s", exc)
+                self._runtime_failed = True
+                logger.warning(
+                    "EfficientNet inference unavailable, using heuristic fallback: %s",
+                    exc,
+                )
 
-        score, details = self._predict_with_heuristics(image_bgr)
+        score, details = self._predict_with_heuristics(ctx.bgr)
         return {
             "anomaly_score": round(score, 4),
             "method": "heuristic_cv",
-            "model_id": "opencv-heuristic-v1",
+            "model_id": "opencv-heuristic-v2",
             "details": details,
         }
 
-    def _predict_with_vit(self, image) -> tuple[float, dict[str, float]]:
-        runtime = self._get_vit_runtime()
-        import torch
+    def _predict_with_efficientnet(
+        self,
+        context: DocumentImageContext,
+    ) -> tuple[float, dict[str, float]]:
+        runtime = self._get_runtime()
+        patches = self._extract_patches(context.pil_image)
+        if not patches:
+            raise RuntimeError("Unable to extract image patches for inference.")
 
-        inputs = runtime.processor(images=image, return_tensors="pt")
-        inputs = {key: value.to(runtime.device) for key, value in inputs.items()}
+        batch = torch.stack(
+            [self._preprocess_patch(patch) for patch in patches]
+        ).to(runtime.device)
 
         with torch.no_grad():
-            outputs = runtime.model(**inputs)
+            features = runtime.model(batch).detach().cpu().numpy()
 
-        if hasattr(outputs, "logits"):
-            logits = outputs.logits.squeeze(0)
-            if logits.ndim == 0:
-                probability = torch.sigmoid(logits).item()
-            else:
-                probabilities = torch.softmax(logits, dim=-1)
-                probability = probabilities.max().item()
-            return float(probability), {"logit_max": float(logits.max().item())}
+        norms = np.linalg.norm(features, axis=1)
+        median = float(np.median(norms))
+        mad = float(np.median(np.abs(norms - median)) + 1e-6)
+        z_scores = (norms - median) / (1.4826 * mad)
+        patch_outlier = float(np.clip(np.max(z_scores) / 4.0, 0.0, 1.0))
 
-        hidden = outputs.last_hidden_state if hasattr(outputs, "last_hidden_state") else outputs[0]
-        cls_embedding = hidden[:, 0, :].squeeze(0).detach().cpu().numpy()
-        score, details = self._score_embedding(cls_embedding)
-        return score, details
+        forensic_score, forensic_details = self._predict_with_heuristics(context.bgr)
+        combined = float(
+            np.clip(
+                0.65 * patch_outlier + 0.35 * forensic_score,
+                0.0,
+                1.0,
+            )
+        )
 
-    def _get_vit_runtime(self) -> _ViTRuntime:
-        if self._vit_runtime is not None:
-            return self._vit_runtime
+        details = {
+            "patch_outlier_score": round(patch_outlier, 4),
+            "patch_z_max": round(float(np.max(z_scores)), 4),
+            **forensic_details,
+        }
+        return combined, details
 
-        import torch
-        from transformers import AutoImageProcessor, AutoModelForImageClassification
+    def _get_runtime(self) -> _EfficientNetRuntime:
+        if self._runtime is not None:
+            return self._runtime
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        model_id = self.settings.hf_model_id
+        backbone = efficientnet_b0(weights=EfficientNet_B0_Weights.IMAGENET1K_V1)
+        backbone.classifier = nn.Identity()
+        backbone.eval()
+        backbone.to(device)
+        self._runtime = _EfficientNetRuntime(model=backbone, device=device)
+        return self._runtime
 
-        try:
-            processor = AutoImageProcessor.from_pretrained(model_id)
-            model = AutoModelForImageClassification.from_pretrained(model_id)
-        except Exception:
-            from transformers import AutoModel
+    def _extract_patches(self, image: Image.Image) -> list[Image.Image]:
+        width, height = image.size
+        patch_w = max(1, width // self.PATCH_GRID)
+        patch_h = max(1, height // self.PATCH_GRID)
+        patches: list[Image.Image] = []
 
-            processor = AutoImageProcessor.from_pretrained(model_id)
-            model = AutoModel.from_pretrained(model_id)
+        for row in range(self.PATCH_GRID):
+            for col in range(self.PATCH_GRID):
+                left = col * patch_w
+                top = row * patch_h
+                right = width if col == self.PATCH_GRID - 1 else (col + 1) * patch_w
+                bottom = height if row == self.PATCH_GRID - 1 else (row + 1) * patch_h
+                patch = image.crop((left, top, right, bottom))
+                if patch.width > 8 and patch.height > 8:
+                    patches.append(patch.resize((224, 224), Image.Resampling.BILINEAR))
+        return patches
 
-        model.eval()
-        model.to(device)
-        self._vit_runtime = _ViTRuntime(model=model, processor=processor, device=device)
-        return self._vit_runtime
-
-    def _score_embedding(self, embedding: np.ndarray) -> tuple[float, dict[str, float]]:
-        norm = float(np.linalg.norm(embedding))
-        std = float(np.std(embedding))
-        sparsity = float(np.mean(np.abs(embedding) < 0.05))
-        kurtosis_proxy = float(np.mean((embedding - np.mean(embedding)) ** 4))
-
-        # Map embedding statistics to an anomaly proxy in [0, 1].
-        raw = (
-            0.35 * _sigmoid((norm - 95.0) / 8.0)
-            + 0.30 * _sigmoid((std - 0.45) / 0.08)
-            + 0.20 * sparsity
-            + 0.15 * _sigmoid((kurtosis_proxy - 2.5) / 1.5)
+    @staticmethod
+    def _preprocess_patch(patch: Image.Image) -> torch.Tensor:
+        tensor = tf.to_tensor(patch)
+        return tf.normalize(
+            tensor,
+            mean=(0.485, 0.456, 0.406),
+            std=(0.229, 0.224, 0.225),
         )
-        return float(np.clip(raw, 0.0, 1.0)), {
-            "embedding_norm": round(norm, 4),
-            "embedding_std": round(std, 4),
-            "embedding_sparsity": round(sparsity, 4),
-            "embedding_kurtosis_proxy": round(kurtosis_proxy, 4),
-        }
 
     def _predict_with_heuristics(self, image_bgr: np.ndarray) -> tuple[float, dict[str, float]]:
         gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
@@ -147,7 +166,7 @@ class ModelInferenceService:
 
         block_size = 8
         h, w = gray.shape
-        block_vars = []
+        block_vars: list[float] = []
         for y in range(0, h - block_size, block_size):
             for x in range(0, w - block_size, block_size):
                 patch = gray[y : y + block_size, x : x + block_size]

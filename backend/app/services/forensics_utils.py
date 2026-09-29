@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
+import cv2
 import numpy as np
 from PIL import Image
 
@@ -28,9 +30,9 @@ def load_pil_image(file_path: Path) -> Image.Image:
 
 def pdf_first_page_to_pil(file_path: Path, dpi: int = 200) -> Image.Image:
     """Render the first page of a PDF to a PIL RGB image."""
-    import fitz  # PyMuPDF
+    import pymupdf
 
-    with fitz.open(file_path) as document:
+    with pymupdf.open(file_path) as document:
         if document.page_count == 0:
             raise ValueError("PDF contains no pages.")
         page = document.load_page(0)
@@ -39,9 +41,7 @@ def pdf_first_page_to_pil(file_path: Path, dpi: int = 200) -> Image.Image:
 
 
 def load_document_rgb(file_path: str | Path, dpi: int = 200) -> Image.Image:
-    """
-    Load a supported document (image or PDF first page) as an RGB PIL image.
-    """
+    """Load a supported document (image or PDF first page) as an RGB PIL image."""
     path = Path(file_path)
     if not path.exists():
         raise FileNotFoundError(f"Document not found: {path}")
@@ -58,3 +58,30 @@ def pil_to_numpy(image: Image.Image) -> np.ndarray:
     """Convert PIL RGB image to OpenCV-compatible BGR ndarray."""
     rgb = np.asarray(image)
     return rgb[:, :, ::-1].copy()
+
+
+@dataclass(slots=True)
+class DocumentImageContext:
+    """Cached document image tensors for multi-analyzer pipelines."""
+
+    path: Path
+    pil_image: Image.Image
+    rgb: np.ndarray
+    bgr: np.ndarray
+    gray: np.ndarray
+
+
+def load_document_context(file_path: str | Path, dpi: int = 200) -> DocumentImageContext:
+    """Load document once and derive RGB/BGR/gray arrays for forensic modules."""
+    path = Path(file_path)
+    pil_image = load_document_rgb(path, dpi=dpi)
+    rgb = np.asarray(pil_image, dtype=np.uint8)
+    bgr = rgb[:, :, ::-1].copy()
+    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+    return DocumentImageContext(
+        path=path,
+        pil_image=pil_image,
+        rgb=rgb,
+        bgr=bgr,
+        gray=gray,
+    )

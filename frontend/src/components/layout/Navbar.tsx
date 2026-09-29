@@ -21,7 +21,7 @@ export function Navbar() {
         </div>
 
         <Badge variant="secondary" className="hidden sm:inline-flex">
-          Phase 3 · Screening UI
+          Prototype
         </Badge>
       </div>
     </header>

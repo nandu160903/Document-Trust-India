@@ -24,6 +24,10 @@ import {
   isAllowedFile,
 } from '@/lib/constants'
 import { cn } from '@/lib/utils'
+import {
+  createDocumentPreviewUrl,
+  DocumentPreview,
+} from '@/components/DocumentPreview'
 
 type DocumentUploadProps = {
   onAnalyze?: (file: File) => Promise<void>
@@ -39,8 +43,13 @@ export function DocumentUpload({ onAnalyze }: DocumentUploadProps) {
   const [analysisProgress, setAnalysisProgress] = useState(0)
 
   const resetSelection = useCallback(() => {
+    setPreviewUrl((current) => {
+      if (current) {
+        URL.revokeObjectURL(current)
+      }
+      return null
+    })
     setSelectedFile(null)
-    setPreviewUrl(null)
     setError(null)
     setAnalysisProgress(0)
     if (inputRef.current) {
@@ -56,20 +65,24 @@ export function DocumentUpload({ onAnalyze }: DocumentUploadProps) {
     if (!isAllowedFile(file)) {
       setError('Only JPEG, PNG, and PDF files are supported.')
       setSelectedFile(null)
-      setPreviewUrl(null)
+      setPreviewUrl((current) => {
+        if (current) {
+          URL.revokeObjectURL(current)
+        }
+        return null
+      })
       return
     }
 
     setError(null)
     setSelectedFile(file)
 
-    if (file.type.startsWith('image/')) {
-      const objectUrl = URL.createObjectURL(file)
-      setPreviewUrl(objectUrl)
-      return
-    }
-
-    setPreviewUrl(null)
+    setPreviewUrl((current) => {
+      if (current) {
+        URL.revokeObjectURL(current)
+      }
+      return createDocumentPreviewUrl(file)
+    })
   }, [])
 
   useEffect(() => {
@@ -99,14 +112,19 @@ export function DocumentUpload({ onAnalyze }: DocumentUploadProps) {
     }, 350)
 
     try {
-      if (onAnalyze) {
-        await onAnalyze(selectedFile)
-      } else {
-        await new Promise((resolve) => window.setTimeout(resolve, 2200))
+      if (!onAnalyze) {
+        throw new Error(
+          'Analysis handler is not configured. Check frontend API integration.',
+        )
       }
+      await onAnalyze(selectedFile)
       setAnalysisProgress(100)
-    } catch {
-      setError('Analysis failed. Please try again.')
+    } catch (analysisError) {
+      const message =
+        analysisError instanceof Error
+          ? analysisError.message
+          : 'Analysis failed. Please try again.'
+      setError(message)
       setAnalysisProgress(0)
     } finally {
       window.clearInterval(progressTimer)
@@ -221,17 +239,18 @@ export function DocumentUpload({ onAnalyze }: DocumentUploadProps) {
             </div>
 
             {previewUrl ? (
-              <img
+              <DocumentPreview
                 src={previewUrl}
                 alt={`Preview of ${selectedFile.name}`}
-                className="mx-auto max-h-72 w-full rounded-lg border object-contain bg-background"
+                fileName={selectedFile.name}
+                mimeType={selectedFile.type}
               />
             ) : (
               <div className="flex min-h-40 flex-col items-center justify-center rounded-lg border border-dashed bg-background px-4 py-8 text-muted-foreground">
                 <FileText className="mb-2 size-10" aria-hidden="true" />
-                <p className="font-medium text-foreground">PDF preview</p>
+                <p className="font-medium text-foreground">Document selected</p>
                 <p className="text-sm">
-                  PDF documents will be analyzed directly by the backend.
+                  Preview unavailable for this file type.
                 </p>
               </div>
             )}
@@ -242,6 +261,21 @@ export function DocumentUpload({ onAnalyze }: DocumentUploadProps) {
             Selected document preview will appear here after upload.
           </div>
         )}
+
+        {isAnalyzing && previewUrl && selectedFile ? (
+          <div className="overflow-hidden rounded-xl border bg-muted/10 p-3">
+            <p className="mb-2 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Document glimpse while analyzing
+            </p>
+            <DocumentPreview
+              src={previewUrl}
+              alt={`Analyzing ${selectedFile.name}`}
+              fileName={selectedFile.name}
+              mimeType={selectedFile.type}
+              frameClassName="max-h-48"
+            />
+          </div>
+        ) : null}
 
         {isAnalyzing ? (
           <div className="space-y-3 rounded-xl border bg-muted/20 p-4">

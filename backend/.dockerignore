@@ -1,0 +1,16 @@
+.venv
+__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+temp/uploads/*
+temp/heatmaps/*
+!temp/uploads/.gitkeep
+!temp/heatmaps/.gitkeep
+=*
+.git
+.gitignore
+Dockerfile
+.dockerignore

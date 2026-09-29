@@ -2,7 +2,7 @@
 
 AI-based **Fake Identity & Document Screening System** for detecting tampering, inconsistencies, and potential fraud signals in identity documents and certificates.
 
-This monorepo contains a **FastAPI backend** and a **React (Vite) frontend**. The upload pipeline is implemented; computer vision / ML screening models are planned for upcoming phases.
+This monorepo contains a **FastAPI forensic backend**, a **React (Vite) frontend**, Docker orchestration, and a dedicated **`tests/`** suite.
 
 ---
 
@@ -10,9 +10,11 @@ This monorepo contains a **FastAPI backend** and a **React (Vite) frontend**. Th
 
 | Layer | Technologies |
 |-------|--------------|
-| **Backend** | Python 3, FastAPI, Uvicorn, Pydantic, aiofiles |
+| **Backend** | Python 3.11, FastAPI, Uvicorn, Pydantic, OpenCV, EasyOCR, Transformers |
+| **Forensics** | EXIF/XMP metadata, ELA, OCR layout heuristics, ViT inference |
 | **Frontend** | React 19, TypeScript, Vite, Tailwind CSS v4, Shadcn UI, Lucide React |
-| **Storage** | Local filesystem (`backend/temp/uploads/`) |
+| **Deployment** | Docker, Docker Compose, Nginx |
+| **Storage** | Local filesystem (`backend/temp/uploads/`, `backend/temp/heatmaps/`) |
 
 ---
 
@@ -22,31 +24,33 @@ This monorepo contains a **FastAPI backend** and a **React (Vite) frontend**. Th
 Document-Trust-India/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py                 # FastAPI entry point + CORS
-│   │   ├── api/v1/
-│   │   │   ├── api.py              # v1 router aggregator
-│   │   │   └── endpoints/
-│   │   │       └── upload.py       # POST /api/v1/upload
-│   │   ├── core/
-│   │   │   └── config.py           # Settings (port, CORS, upload rules)
+│   │   ├── main.py                     # FastAPI + CORS + static mounts
+│   │   ├── api/v1/endpoints/upload.py  # POST /api/v1/upload (analyze)
+│   │   ├── core/config.py
 │   │   ├── schemas/
-│   │   │   └── upload.py           # Response models
+│   │   │   ├── analysis.py             # Frontend analysis response
+│   │   │   └── forensics.py
 │   │   └── services/
-│   │       └── storage.py          # UUID-based file persistence
-│   ├── temp/uploads/               # Uploaded files (gitignored)
+│   │       ├── metadata_analyzer.py
+│   │       ├── ela_detector.py
+│   │       ├── ocr_layout.py
+│   │       ├── model_inference.py
+│   │       ├── risk_engine.py
+│   │       ├── pipeline.py
+│   │       └── storage.py
+│   ├── temp/uploads/                   # Uploaded documents
+│   ├── temp/heatmaps/                  # ELA heatmap artifacts
+│   ├── Dockerfile
 │   └── requirements.txt
 ├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── DocumentUpload.tsx  # Drag-and-drop upload UI
-│   │   │   ├── layout/             # Navbar, MainLayout
-│   │   │   └── ui/                 # Shadcn UI primitives
-│   │   ├── pages/
-│   │   │   └── HomePage.tsx
-│   │   ├── services/               # API layer (Step 3)
-│   │   └── lib/                    # Utils & constants
-│   ├── package.json
-│   └── vite.config.ts
+│   ├── src/                            # React UI
+│   ├── Dockerfile
+│   └── nginx.conf
+├── tests/                              # Manual/integration tests (separate)
+│   ├── fixtures/
+│   ├── helpers/
+│   └── manual/
+├── docker-compose.yml
 └── README.md
 ```
 
@@ -54,13 +58,14 @@ Document-Trust-India/
 
 ## Prerequisites
 
-- **Python** 3.10+
+- **Python** 3.10+ (3.11 recommended for Docker parity)
 - **Node.js** 18+ and **npm**
-- A terminal with access to both `backend/` and `frontend/`
+- **Docker** & **Docker Compose** (optional, for container deployment)
+- **Tesseract OCR** (optional fallback): `sudo apt-get install tesseract-ocr`
 
 ---
 
-## Quick Start
+## Quick Start (Local Development)
 
 Run the backend and frontend in **separate terminals**.
 
@@ -68,42 +73,25 @@ Run the backend and frontend in **separate terminals**.
 
 ```bash
 cd backend
-
-# Create and activate a virtual environment
 python -m venv .venv
-source .venv/bin/activate        # Linux / macOS
-# .venv\Scripts\activate         # Windows
-
-# Install dependencies
+source .venv/bin/activate
 pip install -r requirements.txt
-
-# Start the API server (default port: 7676)
 uvicorn app.main:app --reload --host 0.0.0.0 --port 7676
-```
-
-Alternative (uses settings from `config.py`):
-
-```bash
-cd backend
-python -m app.main
 ```
 
 | Resource | URL |
 |----------|-----|
 | API base | http://localhost:7676 |
 | Swagger UI | http://localhost:7676/docs |
-| ReDoc | http://localhost:7676/redoc |
 | Health check | http://localhost:7676/health |
+| Static uploads | http://localhost:7676/static/uploads/ |
+| Static heatmaps | http://localhost:7676/static/heatmaps/ |
 
 ### 2. Frontend (React + Vite)
 
 ```bash
 cd frontend
-
-# Install dependencies
 npm install
-
-# Start dev server (default port: 5173)
 npm run dev
 ```
 
@@ -111,12 +99,33 @@ npm run dev
 |----------|-----|
 | App | http://localhost:5173 |
 
-### 3. Production build (frontend)
+---
+
+## Docker Deployment (Module 4)
+
+Build and run both services with persistent volumes:
 
 ```bash
-cd frontend
-npm run build
-npm run preview
+docker compose up --build
+```
+
+| Service | URL |
+|---------|-----|
+| Frontend (Nginx) | http://localhost:8080 |
+| Backend API | http://localhost:7676 |
+| API via Nginx proxy | http://localhost:8080/api/v1/... |
+
+Docker details:
+
+- **Backend** image: Python 3.11-slim, OpenCV/OCR system libs, cached pip wheels
+- **Frontend** image: Node 22 build stage → Nginx runtime
+- **Volumes**: `backend_uploads`, `backend_heatmaps`, `model_cache`
+- **Health checks** on both containers
+
+Stop services:
+
+```bash
+docker compose down
 ```
 
 ---
@@ -125,138 +134,121 @@ npm run preview
 
 ### `GET /health`
 
-Health check endpoint.
-
-**Response:**
-
 ```json
-{
-  "status": "ok",
-  "service": "DocumentTrust India"
-}
+{ "status": "ok", "service": "DocumentTrust India" }
 ```
 
 ### `POST /api/v1/upload`
 
-Upload a single document for screening.
+Upload and analyze a document in one request.
 
-**Request:** `multipart/form-data` with field `file`
+**Request:** `multipart/form-data` with field `file`  
+**Allowed types:** `image/jpeg`, `image/png`, `application/pdf`
 
-**Allowed types:**
-
-- `image/jpeg`
-- `image/png`
-- `application/pdf`
-
-**Example (curl):**
+**Example:**
 
 ```bash
 curl -X POST "http://localhost:7676/api/v1/upload" \
   -H "accept: application/json" \
-  -F "file=@/path/to/document.pdf"
+  -F "file=@/path/to/document.jpg"
 ```
 
-**Success response (201):**
+**Success response (200):**
 
 ```json
 {
   "status": "success",
-  "filename": "a1b2c3d4e5f6....pdf",
-  "original_filename": "document.pdf",
-  "path": "/absolute/path/to/backend/temp/uploads/a1b2c3d4....pdf",
-  "content_type": "application/pdf"
+  "risk_score": 85,
+  "risk_level": "HIGH",
+  "reasons": [
+    "Software manipulation signature detected: Adobe Photoshop",
+    "Localized compression anomalies detected via ELA"
+  ],
+  "original_image_url": "/static/uploads/<uuid>.jpg",
+  "heatmap_image_url": "/static/heatmaps/<uuid>_ela.png",
+  "extracted_fields": {
+    "text_block_1": "AADHAAR",
+    "text_block_1_confidence": 0.91
+  },
+  "anomaly_score": 0.74,
+  "inference_method": "transformers_vit",
+  "component_scores": {
+    "metadata": 25,
+    "ela": 30,
+    "layout": 0,
+    "deep_learning": 25
+  }
 }
 ```
 
-**Error responses:**
+---
 
-| Status | Cause |
-|--------|-------|
-| `400` | Missing filename |
-| `415` | Unsupported file type |
+## Testing
+
+All test scripts live under **`tests/`**, separate from application code. See [`tests/README.md`](tests/README.md).
+
+```bash
+# From repository root (backend venv activated)
+
+# Module 1 — metadata, ELA, OCR/layout
+python tests/manual/test_module1_forensics.py path/to/document.jpg
+
+# Module 2 — risk engine pipeline
+python tests/manual/test_module2_risk_engine.py path/to/document.jpg
+
+# Module 3 — API upload + static asset workflow (in-process TestClient)
+python tests/manual/test_module3_api_workflow.py
+
+# Run all manual tests
+python tests/manual/run_all.py path/to/document.jpg
+```
+
+Place reusable sample files in `tests/fixtures/`.
 
 ---
 
 ## Configuration
 
-Backend settings live in `backend/app/core/config.py` and can be overridden via environment variables or a `.env` file in `backend/`.
+Settings: `backend/app/core/config.py` (override via `backend/.env`).
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `API_HOST` | `0.0.0.0` | Server bind host |
-| `API_PORT` | `7676` | Server port |
-| `DEBUG` | `true` | Enable auto-reload when using `python -m app.main` |
-| `MAX_UPLOAD_SIZE_MB` | `10` | Max upload size (reserved for future enforcement) |
+| `API_HOST` | `0.0.0.0` | Bind host |
+| `API_PORT` | `7676` | Bind port |
+| `DEBUG` | `true` | Auto-reload for local dev |
+| `ENABLE_TRANSFORMERS_INFERENCE` | `true` | ViT inference toggle |
+| `HF_MODEL_ID` | `google/vit-base-patch16-224` | Hugging Face model |
+| `ELA_MEAN_ERROR_THRESHOLD` | `8.0` | ELA risk trigger |
+| `ELA_PEAK_ANOMALY_THRESHOLD` | `2.5` | ELA peak trigger |
+| `DL_ANOMALY_THRESHOLD` | `0.7` | Deep learning risk trigger |
 
-**CORS** is preconfigured for local React dev servers:
+Risk weights: metadata **+25**, ELA **+30**, layout **+20**, deep learning **+25**.
 
-- http://localhost:3000
-- http://localhost:5173
-- http://127.0.0.1:3000
-- http://127.0.0.1:5173
-
-Uploaded files are stored under `backend/temp/uploads/` with UUID-based filenames. This directory is gitignored (except `.gitkeep`).
-
----
-
-## Frontend Features (Phase 3)
-
-- Responsive layout with **DocumentTrust India** branding
-- Drag-and-drop document upload with JPEG / PNG / PDF validation
-- Image preview and PDF placeholder
-- **Analyze Document** button with loading spinner and progress bar
-- API service layer and results dashboard — **in progress** (Steps 3–4)
-
-When the analysis API is wired up, the frontend will call:
-
-```
-POST http://localhost:7676/api/v1/upload
-```
-
-> **Note:** Use port **7676** for the backend (not 8000).
+Risk levels: **LOW** (< 30), **MEDIUM** (30–65), **HIGH** (> 65).
 
 ---
 
-## Development Notes
+## Forensic Pipeline Overview
 
-### Add Shadcn UI components
-
-From `frontend/`:
-
-```bash
-npx shadcn@latest add button card alert badge
-```
-
-If components are created under a literal `@/` folder, move them into `src/components/ui/`.
-
-### Lint frontend
-
-```bash
-cd frontend
-npm run lint
-```
-
-### Future ML dependencies (backend)
-
-Placeholder entries in `backend/requirements.txt` (currently commented):
-
-- `opencv-python-headless`
-- `torch` / `torchvision`
-- `easyocr`
-- `numpy` / `pillow`
-
-Uncomment and install when the computer vision pipeline is implemented.
+1. **MetadataAnalyzer** — EXIF/XMP/PDF metadata, editing software signatures
+2. **ELADetector** — Error Level Analysis heatmap generation
+3. **OCRLayoutAnalyzer** — text extraction + layout inconsistency heuristics
+4. **ModelInferenceService** — ViT-based anomaly scoring with CV fallback
+5. **RiskEngine** — weighted aggregation into `risk_score` / `risk_level`
+6. **DocumentAnalyzerPipeline** — orchestrates analysis for the API
 
 ---
 
 ## Roadmap
 
-- [x] FastAPI backend scaffold + upload endpoint
-- [x] React frontend scaffold (Vite, Tailwind, Shadcn UI)
-- [x] Upload UI with drag-and-drop and loading states
-- [ ] API service layer (`src/services/`)
-- [ ] ML / CV screening pipeline (backend)
-- [ ] Results dashboard (risk score, heatmap comparison)
+- [x] FastAPI backend + upload endpoint
+- [x] React frontend upload UI
+- [x] Module 1 forensic services (metadata, ELA, OCR/layout)
+- [x] Module 2 ML inference + risk engine
+- [x] Module 3 API pipeline + static asset serving
+- [x] Module 4 Docker Compose orchestration
+- [x] Dedicated `tests/` folder
+- [ ] Frontend API service layer + results dashboard wiring
 
 ---
 

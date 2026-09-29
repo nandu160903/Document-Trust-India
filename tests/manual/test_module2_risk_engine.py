@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Manual verification script for Module 2 risk engine."""
+"""Module 2 risk engine verification."""
 
 from __future__ import annotations
 
@@ -8,22 +8,21 @@ import json
 import sys
 from pathlib import Path
 
-BACKEND_ROOT = Path(__file__).resolve().parents[1]
-if str(BACKEND_ROOT) not in sys.path:
-    sys.path.insert(0, str(BACKEND_ROOT))
+TESTS_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(TESTS_ROOT))
+
+from helpers.bootstrap import bootstrap_backend_path
+
+bootstrap_backend_path()
 
 from app.services.risk_engine import RiskEngine
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run full Module 1 + Module 2 analysis pipeline."
+        description="Run Module 1 + Module 2 analysis pipeline."
     )
-    parser.add_argument(
-        "file",
-        type=Path,
-        help="Path to a JPEG, PNG, or PDF document.",
-    )
+    parser.add_argument("file", type=Path, help="Path to JPEG, PNG, or PDF.")
     args = parser.parse_args()
 
     if not args.file.exists():

@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.api import api_router
 from app.core.config import get_settings
@@ -11,9 +12,11 @@ from app.core.config import get_settings
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    """Ensure upload directory exists on startup."""
+    """Ensure runtime directories exist on startup."""
     settings = get_settings()
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
+    settings.heatmap_dir.mkdir(parents=True, exist_ok=True)
+    settings.temp_dir.mkdir(parents=True, exist_ok=True)
     yield
 
 
@@ -34,6 +37,17 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+    )
+
+    application.mount(
+        settings.static_uploads_prefix,
+        StaticFiles(directory=str(settings.upload_dir)),
+        name="uploads",
+    )
+    application.mount(
+        settings.static_heatmaps_prefix,
+        StaticFiles(directory=str(settings.heatmap_dir)),
+        name="heatmaps",
     )
 
     application.include_router(api_router, prefix="/api/v1")

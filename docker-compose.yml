@@ -1,0 +1,55 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: documenttrust-backend
+    ports:
+      - "7676:7676"
+    environment:
+      API_HOST: 0.0.0.0
+      API_PORT: 7676
+      DEBUG: "false"
+      ENABLE_TRANSFORMERS_INFERENCE: "true"
+      HF_HOME: /app/.cache/huggingface
+      TORCH_HOME: /app/.cache/torch
+    volumes:
+      - backend_uploads:/app/temp/uploads
+      - backend_heatmaps:/app/temp/heatmaps
+      - model_cache:/app/.cache
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:7676/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    networks:
+      - documenttrust
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: documenttrust-frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - documenttrust
+
+volumes:
+  backend_uploads:
+  backend_heatmaps:
+  model_cache:
+
+networks:
+  documenttrust:
+    driver: bridge

@@ -1,27 +1,29 @@
-"""Document upload endpoint."""
+"""Document upload and forensic analysis endpoint."""
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.concurrency import run_in_threadpool
 
 from app.core.config import Settings, get_settings
-from app.schemas.upload import UploadResponse
+from app.schemas.analysis import AnalysisResult
+from app.services.pipeline import DocumentAnalyzerPipeline
 from app.services.storage import save_upload
 
-router = APIRouter(tags=["upload"])
+router = APIRouter(tags=["analysis"])
 
 
 @router.post(
     "/upload",
-    response_model=UploadResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Upload an identity / document file",
+    response_model=AnalysisResult,
+    status_code=status.HTTP_200_OK,
+    summary="Upload and analyze a document",
 )
-async def upload_document(
+async def upload_and_analyze_document(
     file: UploadFile = File(..., description="JPEG, PNG, or PDF document"),
     settings: Settings = Depends(get_settings),
-) -> UploadResponse:
+) -> AnalysisResult:
     """
-    Accept a single file upload, validate MIME type, and store it securely
-    under ``temp/uploads/`` with a UUID filename.
+    Accept a document upload, persist it under ``temp/uploads/``, run the
+    forensic pipeline, and return risk scoring plus static asset URLs.
     """
     content_type = (file.content_type or "").lower()
 
@@ -41,11 +43,18 @@ async def upload_document(
         )
 
     stored_name, saved_path = await save_upload(file, settings)
+    pipeline = DocumentAnalyzerPipeline(settings=settings)
 
-    return UploadResponse(
-        status="success",
-        filename=stored_name,
-        original_filename=file.filename,
-        path=str(saved_path),
-        content_type=content_type,
-    )
+    try:
+        result = await run_in_threadpool(
+            pipeline.run,
+            saved_path,
+            stored_filename=stored_name,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Document analysis failed: {exc}",
+        ) from exc
+
+    return result

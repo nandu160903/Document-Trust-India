@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     # Upload storage
     upload_dir: Path = BASE_DIR / "temp" / "uploads"
     heatmap_dir: Path = BASE_DIR / "temp" / "heatmaps"
+    temp_dir: Path = BASE_DIR / "temp"
+    static_uploads_prefix: str = "/static/uploads"
+    static_heatmaps_prefix: str = "/static/heatmaps"
     max_upload_size_mb: int = 10
     allowed_content_types: list[str] = [
         "image/jpeg",
@@ -71,4 +74,5 @@ def get_settings() -> Settings:
     settings = Settings()
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
     settings.heatmap_dir.mkdir(parents=True, exist_ok=True)
+    settings.temp_dir.mkdir(parents=True, exist_ok=True)
     return settings

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Manual verification script for Module 1 forensic services."""
+"""Module 1 forensic service verification."""
 
 from __future__ import annotations
 
@@ -8,9 +8,12 @@ import json
 import sys
 from pathlib import Path
 
-BACKEND_ROOT = Path(__file__).resolve().parents[1]
-if str(BACKEND_ROOT) not in sys.path:
-    sys.path.insert(0, str(BACKEND_ROOT))
+TESTS_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(TESTS_ROOT))
+
+from helpers.bootstrap import bootstrap_backend_path
+
+bootstrap_backend_path()
 
 from app.services.ela_detector import ELADetector
 from app.services.metadata_analyzer import MetadataAnalyzer
@@ -34,18 +37,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run Module 1 forensic analyzers against a document."
     )
-    parser.add_argument(
-        "file",
-        type=Path,
-        help="Path to a JPEG, PNG, or PDF document.",
-    )
+    parser.add_argument("file", type=Path, help="Path to JPEG, PNG, or PDF.")
     args = parser.parse_args()
 
     if not args.file.exists():
         raise SystemExit(f"File not found: {args.file}")
 
-    results = run_module1_tests(args.file)
-    print(json.dumps(results, indent=2))
+    print(json.dumps(run_module1_tests(args.file), indent=2))
 
 
 if __name__ == "__main__":
